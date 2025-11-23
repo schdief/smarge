@@ -23,7 +23,44 @@
 - Port configuration (default: 502)
 - Register map or documentation links
 
-### Task 2: Contact Q CELLS Official Support
+### Task 2: Reverse Engineer Q.HOME Web UI (NEW - PRIMARY FOR MONITORING)
+- [ ] Access Q.HOME web interface: https://qhome-ess-g3.q-cells.eu/#/login
+- [ ] Login with Q.HOME credentials
+- [ ] Open browser Developer Tools (F12) → Network tab
+- [ ] Navigate through web UI and capture all API calls:
+  - [ ] Dashboard/overview page (battery SoC, solar, power flows)
+  - [ ] Battery settings/status page
+  - [ ] Wallbox/EDRIVE page (if available)
+  - [ ] **Test if control actions exist** (start/stop charging buttons)
+- [ ] Document all endpoints:
+  - [ ] Base URL (likely `https://qhome-ess-g3.q-cells.eu/api/...` or similar)
+  - [ ] Authentication method (Bearer token? Session cookie?)
+  - [ ] Request headers (Authorization, Content-Type, etc.)
+  - [ ] Request/response payloads (JSON structure)
+- [ ] Export HAR file (HTTP Archive) for offline analysis
+- [ ] Test API calls with curl/Postman to verify they work independently
+
+**Expected Findings:**
+- ✅ REST API endpoints for battery/solar/wallbox **monitoring**
+- ❓ Control endpoints may NOT exist (web UI might be read-only for remote access)
+- ✅ Authentication token mechanism
+- ✅ Polling frequency used by web UI
+
+**Important Note:**
+- Web UI likely designed for **monitoring only** (view data remotely)
+- **Control** (start/stop charging, battery config) may require:
+  - Direct local inverter access (same network as device)
+  - Official Q.HOME mobile app (uses different protocol)
+  - MySkoda API (for BEV charging control)
+
+**Success Criteria (Monitoring Only):**
+- Can retrieve battery SoC via API call ✓
+- Can retrieve solar production ✓
+- Can get wallbox status (connected, charging, power) ✓
+- Understand authentication flow ✓
+- **Bonus:** Discover control endpoints (unlikely for remote web UI)
+
+### Task 3: Contact Q CELLS Official Support (LOWER PRIORITY)
 - [ ] Email: `sales@q-cells.com` or find developer contact
 - [ ] Subject: "Developer API Access for Q.HOME+ ESS HYB-G3 Integration"
 - [ ] Body template:
@@ -57,16 +94,158 @@ Best regards,
 [Your Q.HOME customer ID if available]
 ```
 
-- [ ] Set reminder to follow up in 1 week if no response
+- [ ] Set reminder to follow up in 2 weeks if no response
+- [ ] **Expectation:** Low probability of response - prioritize reverse engineering
 
-### Task 3: Check Vehicle Integration
-- [ ] Verify Skoda Enyaq provides SoC in its own app (Skoda Connect/MySkoda)
-- [ ] Check if vehicle reports SoC to wallbox (test by checking Q.HOME app)
-- [ ] Document current manual process for checking BEV charge level
+### Task 4: MySkoda API Integration (PRIMARY FOR BEV DATA)
+- [ ] Verify MySkoda app shows BEV SoC for Skoda Enyaq
+- [ ] Confirm MySkoda account credentials (email + password)
+- [ ] Review MySkoda open-source library: https://github.com/skodaconnect/myskoda
+- [ ] Check Python library for Enyaq-specific data endpoints
+- [ ] Decide: Python subprocess OR native Swift implementation
+
+**Expected Findings:**
+- BEV SoC directly from vehicle (via cellular, not wallbox)
+- Charging state, power, time remaining
+- Optional control: start/stop charging, set charge limit (requires S-PIN)
+
+### Task 5: Check Inverter Local Access (FOR CONTROL CAPABILITIES)
+
+**Purpose:** Web UI may only provide monitoring - local access needed for control
+
+- [ ] Find inverter IP address (check router DHCP table or Q.HOME mobile app)
+- [ ] Access local web interface: `http://[inverter-ip]`
+- [ ] Check for login credentials (may be on inverter label, manual, or in mobile app settings)
+- [ ] Compare local UI vs. cloud UI:
+  - [ ] Does local UI have control buttons (start/stop charging)?
+  - [ ] Can you configure battery charging schedule?
+  - [ ] Can you set wallbox charging start/stop?
+- [ ] Open DevTools on **local** web interface:
+  - [ ] Capture control commands (if available)
+  - [ ] Document local API endpoints
+  - [ ] Check if authentication differs from cloud API
+
+**Expected Findings:**
+- **Local web UI** likely has full control capabilities
+- **Cloud web UI** (qhome-ess-g3.q-cells.eu) likely monitoring only
+- Local API may use different authentication or direct HTTP
+- **Challenge:** Local API only works on same WiFi network as inverter
+
+**Implications for SMARGE App:**
+- ✅ Monitoring: Use cloud Web UI API (works from anywhere)
+- ❓ Control: May require:
+  - Option A: User's iPhone on same WiFi → use local inverter API
+  - Option B: MySkoda API for BEV charging (works from anywhere)
+  - Option C: Manual mode (user controls via Q.HOME mobile app)
+
+### Task 6: Check Vehicle DetailsCK) (UPDATED)
+- [ ] Verify MySkoda app on your iPhone shows Enyaq SoC  
+- [✅] Confirmed: Q.HOME wallbox does NOT report BEV SoC
+- [✅] Confirmed: BEV SoC comes from **MySkoda API** instead
+- [ ] Note vehicle VIN (needed for MySkoda API calls)
 
 ---
 
 ## Week 2: Technical Testing
+
+### Priority 1: Q.HOME Web UI Reverse Engineering (NEW - PRIMARY)
+
+#### Analyze Captured API Calls
+1. [ ] Review all endpoints captured from browser DevTools
+2. [ ] Identify authentication mechanism:
+   ```bash
+   # Example: Test authentication
+   curl -X POST https://qhome-ess-g3.q-cells.eu/api/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"username": "your-email", "password": "your-password"}'
+   ```
+3. [ ] Test data retrieval endpoints:
+   ```bash
+   # Example: Get battery status
+   curl https://qhome-ess-g3.q-cells.eu/api/device/status \
+     -H "Authorization: Bearer YOUR_TOKEN"
+   ```
+4. [ ] Document response structures (battery SoC, solar kW, wallbox state)
+5. [ ] Test control endpoints (if available):
+   - Start/stop battery charging
+   - Start/stop wallbox charging
+   - Set charge rate
+
+#### Swift Implementation POC
+```swift
+class QHomeWebAPI {
+    private let baseURL = "https://qhome-ess-g3.q-cells.eu"
+    private var authToken: String?
+    
+    func login(email: String, password: String) async throws {
+        // Replicate login flow from web UI
+        let url = URL(string: "\(baseURL)/api/auth/login")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let credentials = ["username": email, "password": password]
+        request.httpBody = try JSONEncoder().encode(credentials)
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let response = try JSONDecoder().decode(AuthResponse.self, from: data)
+        self.authToken = response.token
+    }
+    
+    func getBatteryStatus() async throws -> BatteryStatus {
+        // Replicate data fetch from web UI
+    }
+}
+```
+
+**Success Criteria:**
+- Can authenticate programmatically ✓
+- Can retrieve battery SoC ✓
+- Can retrieve solar production ✓
+- Can control wallbox (optional for MVP) ?
+
+---
+
+### Priority 2: MySkoda API Testing
+
+#### Test MySkoda Library
+1. [ ] Install Python myskoda library: `pip install myskoda`
+2. [ ] Test authentication:
+   ```python
+   from myskoda import MySkoda
+   import asyncio
+   
+   async def test():
+       api = MySkoda()
+       await api.login("your-email@example.com", "your-password")
+       vehicles = await api.get_vehicles()
+       print(f"Found vehicles: {vehicles}")
+       
+       vehicle = vehicles[0]  # Your Enyaq
+       status = await vehicle.get_status()
+       print(f"BEV SoC: {status.battery.stateOfChargeInPercent}%")
+       print(f"Charging: {status.charging.state}")
+   
+   asyncio.run(test())
+   ```
+3. [ ] Document successful response structure
+4. [ ] Test polling frequency (try 15 min intervals)
+5. [ ] Check for rate limiting
+
+**Success Criteria:**
+- Can authenticate with MySkoda credentials ✓
+- Can retrieve BEV SoC % ✓  
+- Can get charging state ✓
+- Response time < 5 seconds ✓
+
+#### Swift Implementation Decision
+- [ ] Option A: Call Python script from Swift (quick, works immediately)
+- [ ] Option B: Port OAuth2 flow to Swift (better long-term, more work)
+- [ ] Create proof-of-concept in Swift
+
+---
+
+### Priority 3: Modbus Testing (FALLBACK - Only if Web UI fails)
 
 ### Option A: If Modbus TCP Available
 
@@ -125,25 +304,59 @@ Best regards,
 Create decision document answering:
 
 1. **What integration is available?**
-   - [ ] Modbus TCP (full/read-only)
-   - [ ] Official API (approved/pending/rejected)
-   - [ ] Manual mode only
+   - [✅] **MySkoda API** for BEV SoC (confirmed available)
+   - [ ] **Q.HOME Web UI API** (cloud) for battery/solar **monitoring** (reverse engineering)
+   - [ ] **Q.HOME Local API** (inverter) for battery/wallbox **control** (requires same WiFi)
+   - [ ] Modbus TCP for battery/solar (fallback)
+   - [ ] Official Q.HOME API (unlikely, low priority)
+   - [ ] Manual mode for control (last resort)
 
 2. **What data can be accessed?**
-   - [ ] Battery SoC (automated/manual)
-   - [ ] BEV SoC (automated/manual)
-   - [ ] Solar production (automated/manual)
-   - [ ] Current power flows (automated/manual)
+   - [✅] BEV SoC (automated via MySkoda API)
+   - [ ] Battery SoC (automated via Cloud/Local Web UI OR Modbus OR manual)
+   - [ ] Solar production (automated via Cloud/Local Web UI OR Modbus OR manual)
+   - [ ] Wallbox status - connected/charging (automated via Cloud/Local Web UI OR manual)
+   - [ ] Current power flows (automated via Cloud/Local Web UI OR Modbus OR manual)
 
 3. **What control is available?**
-   - [ ] Start/stop charging (automated/manual)
-   - [ ] Set charge rate (automated/manual)
-   - [ ] Schedule commands (automated/manual)
+   - [ ] **BEV charging** (MySkoda API with S-PIN OR manual via MySkoda app)
+   - [ ] **Wallbox control** (Local inverter API OR manual via Q.HOME app)
+   - [ ] **Battery schedule** (Local inverter API OR manual via Q.HOME app)
+   - ❌ **Cloud Web UI control** (likely not available - monitoring only)
 
 4. **MVP Approach:**
-   - [ ] Option 1: Full Modbus integration (best case)
-   - [ ] Option 2: Read-only Modbus + manual control (good case)
-   - [ ] Option 3: Manual mode only (acceptable case)
+
+   **Monitoring (Data Collection):**
+   - [ ] **Option 1**: Cloud Web UI API (BEST - works from anywhere)
+   - [ ] **Option 2**: Local inverter API (GOOD - requires home WiFi)
+   - [ ] **Option 3**: Modbus (ACCEPTABLE - requires home WiFi, complex)
+   - [ ] **Option 4**: Manual entry (FALLBACK)
+
+   **Control (Charging Commands):**
+   - [ ] **Option A**: MySkoda API for BEV + Manual for battery/wallbox (REALISTIC MVP)
+   - [ ] **Option B**: MySkoda + Local inverter API (GOOD - requires home WiFi)
+   - [ ] **Option C**: Full manual mode (FALLBACK - notifications only)
+
+**Recommended MVP Strategy:**
+
+**Phase 1 (Working from anywhere):**
+- ✅ MySkoda API: BEV SoC + charging control (works remotely)
+- ✅ Cloud Web UI API: Battery SoC + solar monitoring (works remotely)
+- 📱 Manual control: User uses Q.HOME app for battery (acceptable)
+- 🔔 Notifications: "Start BEV charging now" (app does it via MySkoda)
+- 🔔 Notifications: "Charge battery now" (user does it via Q.HOME app)
+
+**Phase 2 (Home WiFi optimization):**
+- ⚡ Local inverter API: Battery + wallbox control (when at home)
+- 🏠 Detect home WiFi → enable local control
+- 🌍 Away from home → monitoring only + MySkoda control
+
+**Value Proposition Still Strong:**
+- App calculates **optimal schedule** (always works)
+- App shows **when to charge** (always works)
+- App sends **timely notifications** (always works)
+- MySkoda controls BEV automatically (works remotely)
+- Battery/wallbox via app or manual (phase 2: automated at home)
 
 ### Update Specification
 
