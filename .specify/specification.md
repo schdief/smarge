@@ -10,6 +10,7 @@
 - v1.2: Major API clarification - BEV SoC from MySkoda API (not wallbox), confirmed Open-Meteo free, updated BEV goal model (default minimum + optional targets)
 - v1.3: Added Q.HOME Web UI reverse engineering as primary approach for battery/wallbox integration
 - v1.4: Separated Q.HOME monitoring (cloud API) vs. control (local API or manual), realistic MVP expectations
+- v1.5: Switched from Swift/iOS native to Flutter cross-platform (iOS 17+ minimum, targeting iOS 26.1)
 
 ---
 
@@ -35,11 +36,11 @@
 ## 1. Introduction
 
 ### 1.1 Purpose
-This specification defines the detailed requirements and design for SMARGE (SMARt chARGE orchestrator), a native iOS application that optimizes household energy costs by intelligently scheduling BEV (Battery Electric Vehicle) and home battery charging based on dynamic electricity pricing and solar power availability.
+This specification defines the detailed requirements and design for SMARGE (SMARt chARGE orchestrator), a Flutter mobile application for iOS (minimum iOS 17+, targeting iOS 26.1) that optimizes household energy costs by intelligently scheduling BEV (Battery Electric Vehicle) and home battery charging based on dynamic electricity pricing and solar power availability.
 
 ### 1.2 Scope
 **In Scope:**
-- iOS native application for iPhone (iOS 18+, targeting iOS 26.1)
+- Flutter mobile application for iPhone (iOS 17+ minimum, targeting iOS 26.1)
 - BEV charging optimization and control
 - Home battery charging/discharging optimization
 - Integration with Tibber (pricing), weather services (solar forecast), and Q.HOME devices
@@ -51,10 +52,11 @@ This specification defines the detailed requirements and design for SMARGE (SMAR
 - Multi-vehicle support
 - Vehicle-to-Grid (V2G)
 - Smart home device integration beyond charging
-- Android or web versions
+- Web platform
 
 **Planned for Phase 2:**
-- Multi-user household sharing via CloudKit and Apple Family Sharing
+- Multi-user household sharing via platform-specific sync (iOS: CloudKit, Android: Firebase)
+- Android platform support
 
 ### 1.3 Target Users
 - Primary: Household owner with solar power, home battery, and BEV
@@ -85,21 +87,21 @@ This specification defines the detailed requirements and design for SMARGE (SMAR
 
 ```
 ┌─────────────────────────────────────────────┐
-│         iPhone (SMARGE iOS App)              │
+│      iPhone (SMARGE Flutter App)            │
 ├─────────────────────────────────────────────┤
 │                                              │
 │  ┌──────────┐  ┌──────────┐  ┌───────────┐ │
 │  │ UI Layer │  │ Business  │  │Background │ │
-│  │(SwiftUI) │→ │  Logic    │→ │ Tasks     │ │
+│  │(Flutter) │→ │  Logic    │→ │ Tasks     │ │
 │  └──────────┘  └──────────┘  └───────────┘ │
 │                      ↓                       │
 │              ┌──────────────┐               │
-│              │ SwiftData    │               │
+│              │ Hive/Isar    │               │
 │              │ (Local DB)   │               │
 │              └──────────────┘               │
 │                      ↓ (Phase 2)            │
 │              ┌──────────────┐               │
-│              │  CloudKit    │               │
+│              │ Platform Sync│               │
 │              │ (Multi-User) │               │
 │              └──────────────┘               │
 └──────────────────┬──────────────────────────┘
@@ -115,9 +117,9 @@ This specification defines the detailed requirements and design for SMARGE (SMAR
 ### 2.2 Core Components
 
 **Presentation Layer:**
-- SwiftUI views for all user interfaces
-- View models managing UI state
-- Charts for visualizations
+- Flutter widgets for all user interfaces
+- State management with Riverpod/Provider
+- Charts for visualizations (fl_chart)
 
 **Business Logic Layer:**
 - Optimization engine (charging schedule calculation)
@@ -125,18 +127,18 @@ This specification defines the detailed requirements and design for SMARGE (SMAR
 - Device controller (API command execution)
 
 **Data Layer:**
-- SwiftData for persistent storage
+- Hive/Isar for persistent storage
 - In-memory cache for real-time data
-- Keychain for credentials
+- Flutter Secure Storage for credentials
 
 **Integration Layer:**
 - API clients for external services
-- Network manager with retry logic
+- Dio/http for networking with retry logic
 - WebSocket support (future: real-time Tibber prices)
 
 **Background Layer:**
-- BGTaskScheduler for periodic updates
-- Notification manager
+- flutter_background_fetch / workmanager for periodic updates
+- flutter_local_notifications for notification manager
 - Background data sync
 
 ---
@@ -378,7 +380,7 @@ This specification defines the detailed requirements and design for SMARGE (SMAR
 **REQ-DC-007**: System SHALL support manual SoC entry if automated queries unavailable  
 **REQ-DC-008**: System SHALL cache all fetched data for offline viewing  
 **REQ-DC-009**: System SHALL retry failed API calls up to 3 times with exponential backoff  
-**REQ-DC-010**: System SHALL store MySkoda credentials securely in iOS Keychain  
+**REQ-DC-010**: System SHALL store MySkoda credentials securely in Flutter Secure Storage  
 
 ### 4.3 BEV Goal Management
 
@@ -427,10 +429,10 @@ This specification defines the detailed requirements and design for SMARGE (SMAR
 
 ### 4.7 Background Processing
 
-**REQ-BG-001**: System SHALL register BGAppRefreshTask for periodic data updates  
-**REQ-BG-002**: System SHALL register BGProcessingTask for optimization  
+**REQ-BG-001**: System SHALL register background tasks using flutter_background_fetch or workmanager  
+**REQ-BG-002**: System SHALL register background processing task for optimization  
 **REQ-BG-003**: Background tasks SHALL execute at least every 30 minutes when app opened daily  
-**REQ-BG-004**: System SHALL complete background work within 25 seconds (iOS limit buffer)  
+**REQ-BG-004**: System SHALL complete background work within platform limits (iOS: 25 sec, Android: varies)  
 **REQ-BG-005**: System SHALL schedule next background task after each execution  
 
 ---
@@ -442,8 +444,8 @@ This specification defines the detailed requirements and design for SMARGE (SMAR
 ```
 ┌─────────────────────────────────────────────────┐
 │            Presentation Layer                    │
-│  ├─ Views (SwiftUI)                             │
-│  ├─ ViewModels (ObservableObject)               │
+│  ├─ Widgets (Flutter)                           │
+│  ├─ State Management (Riverpod/Provider)        │
 │  └─ Navigation & Routing                         │
 └─────────────────────────────────────────────────┘
                       ↓
@@ -459,15 +461,15 @@ This specification defines the detailed requirements and design for SMARGE (SMAR
 ┌─────────────────────────────────────────────────┐
 │            Data Layer                            │
 │  ├─ Repository Pattern                          │
-│  ├─ SwiftData Models                            │
+│  ├─ Hive/Isar Models                            │
 │  ├─ Cache Manager                               │
-│  └─ Keychain Service                            │
+│  └─ Flutter Secure Storage                      │
 └─────────────────────────────────────────────────┘
                       ↓
 ┌─────────────────────────────────────────────────┐
 │            Integration Layer                     │
 │  ├─ API Clients (Tibber, Weather, Q.HOME)      │
-│  ├─ NetworkManager                              │
+│  ├─ Dio/Http Manager                            │
 │  └─ WebSocket Handler (future)                  │
 └─────────────────────────────────────────────────┘
 ```
@@ -476,265 +478,569 @@ This specification defines the detailed requirements and design for SMARGE (SMAR
 
 ```
 SMARGE/
-├── App/
-│   ├── SmargeApp.swift                  # App entry point
-│   └── AppDelegate.swift                # Background task registration
+├── lib/
+│   ├── main.dart                       # App entry point
+│   ├── app.dart                        # App configuration
+│   │
+│   ├── ui/
+│   │   ├── dashboard/
+│   │   │   ├── dashboard_screen.dart
+│   │   │   ├── widgets/
+│   │   │   │   ├── energy_flow_card.dart
+│   │   │   │   ├── bev_status_card.dart
+│   │   │   │   ├── battery_status_card.dart
+│   │   │   │   └── todays_cost_card.dart
+│   │   ├── bev/
+│   │   │   ├── bev_goal_screen.dart
+│   │   │   ├── charge_schedule_screen.dart
+│   │   │   └── quick_charge_sheet.dart
+│   │   ├── analytics/
+│   │   │   ├── analytics_screen.dart
+│   │   │   ├── price_chart.dart
+│   │   │   ├── solar_forecast_chart.dart
+│   │   │   └── cost_history.dart
+│   │   └── settings/
+│   │       ├── settings_screen.dart
+│   │       ├── system_config_screen.dart
+│   │       ├── api_credentials_screen.dart
+│   │       └── notification_settings_screen.dart
+│   │
+│   ├── state/
+│   │   ├── dashboard_provider.dart
+│   │   ├── bev_provider.dart
+│   │   ├── analytics_provider.dart
+│   │   └── settings_provider.dart
+│   │
+│   ├── models/
+│   │   ├── domain/
+│   │   │   ├── bev_goal.dart
+│   │   │   ├── charge_schedule.dart
+│   │   │   ├── device_state.dart
+│   │   │   ├── energy_price.dart
+│   │   │   └── solar_forecast.dart
+│   │   └── dtos/
+│   │       ├── tibber_price_response.dart
+│   │       ├── weather_response.dart
+│   │       └── qhome_status_response.dart
+│   │
+│   ├── services/
+│   │   ├── core/
+│   │   │   ├── optimization_engine.dart
+│   │   │   ├── forecasting_service.dart
+│   │   │   ├── schedule_generator.dart
+│   │   │   └── device_controller.dart
+│   │   ├── api/
+│   │   │   ├── tibber_api.dart
+│   │   │   ├── weather_api.dart
+│   │   │   ├── qhome_battery_api.dart
+│   │   │   └── qhome_wallbox_api.dart
+│   │   ├── background/
+│   │   │   ├── background_task_manager.dart
+│   │   │   ├── notification_manager.dart
+│   │   │   └── data_sync_service.dart
+│   │   └── storage/
+│   │       ├── repository.dart
+│   │       ├── cache_manager.dart
+│   │       └── secure_storage_service.dart
+│   │
+│   └── utils/
+│       ├── extensions/
+│       │   ├── date_extensions.dart
+│       │   ├── double_extensions.dart
+│       │   └── string_extensions.dart
+│       ├── helpers/
+│       │   ├── logger.dart
+│       │   └── formatters.dart
+│       └── constants.dart
 │
-├── Views/
-│   ├── Dashboard/
-│   │   ├── DashboardView.swift
-│   │   ├── EnergyFlowCard.swift
-│   │   ├── BEVStatusCard.swift
-│   │   ├── BatteryStatusCard.swift
-│   │   └── TodaysCostCard.swift
-│   ├── BEV/
-│   │   ├── BEVGoalView.swift
-│   │   ├── ChargeScheduleView.swift
-│   │   └── QuickChargeSheet.swift
-│   ├── Analytics/
-│   │   ├── AnalyticsView.swift
-│   │   ├── PriceChartView.swift
-│   │   ├── SolarForecastView.swift
-│   │   └── CostHistoryView.swift
-│   └── Settings/
-│       ├── SettingsView.swift
-│       ├── SystemConfigView.swift
-│       ├── APICredentialsView.swift
-│       └── NotificationSettingsView.swift
+├── assets/
+│   ├── images/
+│   └── fonts/
 │
-├── ViewModels/
-│   ├── DashboardViewModel.swift
-│   ├── BEVViewModel.swift
-│   ├── AnalyticsViewModel.swift
-│   └── SettingsViewModel.swift
-│
-├── Models/
-│   ├── Domain/
-│   │   ├── BEVGoal.swift
-│   │   ├── ChargeSchedule.swift
-│   │   ├── DeviceState.swift
-│   │   ├── EnergyPrice.swift
-│   │   └── SolarForecast.swift
-│   └── DTOs/                            # Data Transfer Objects
-│       ├── TibberPriceResponse.swift
-│       ├── WeatherResponse.swift
-│       └── QHomeStatusResponse.swift
-│
-├── Services/
-│   ├── Core/
-│   │   ├── OptimizationEngine.swift
-│   │   ├── ForecastingService.swift
-│   │   ├── ScheduleGenerator.swift
-│   │   └── DeviceController.swift
-│   ├── APIs/
-│   │   ├── TibberAPI.swift
-│   │   ├── WeatherAPI.swift
-│   │   ├── QHomeBatteryAPI.swift
-│   │   └── QHomeWallboxAPI.swift
-│   ├── Background/
-│   │   ├── BackgroundTaskManager.swift
-│   │   ├── NotificationManager.swift
-│   │   └── DataSyncService.swift
-│   └── Storage/
-│       ├── Repository.swift
-│       ├── CacheManager.swift
-│       └── KeychainService.swift
-│
-├── Utilities/
-│   ├── Extensions/
-│   │   ├── Date+Extensions.swift
-│   │   ├── Double+Extensions.swift
-│   │   └── View+Extensions.swift
-│   ├── Helpers/
-│   │   ├── Logger.swift
-│   │   └── Formatters.swift
-│   └── Constants.swift
-│
-└── Resources/
-    ├── Assets.xcassets
-    ├── Localizable.strings           # Future: localization
-    └── SMARGE.xcdatamodeld            # SwiftData schema
+├── test/
+└── pubspec.yaml
 ```
 
 ---
 
 ## 6. Data Models
 
-### 6.1 CloudKit Design Considerations (Phase 2)
+### 6.1 Platform Sync Design Considerations (Phase 2)
 
-All data models are designed to be **CloudKit-compatible** from the start:
+All data models are designed to be **sync-compatible** from the start:
 
 **Design Principles:**
-- Use standard Swift types (String, Int, Double, Date, UUID)
-- Avoid complex relationships (minimize @Relationship complexity)
-- Use simple enums with String raw values (CloudKit-compatible)
+- Use standard Dart types (String, int, double, DateTime)
+- Avoid complex nested relationships
+- Use simple enums with string values
 - Keep models flat where possible
-- Plan for CKRecord representation
+- Plan for platform-specific sync (iOS: CloudKit, Android: Firebase)
 
 **Sharing Strategy (Phase 2):**
-- **Shared Database (CKShare)**: BEVGoal, ChargeSchedule, OptimizationRun
-- **Private Database**: User preferences, notification settings
+- **Shared Data**: BEVGoal, ChargeSchedule, OptimizationRun
+- **Private Data**: User preferences, notification settings
 - **Conflict Resolution**: Last-write-wins for most entities, manual for BEVGoal conflicts
 - **Permissions**: All household members read/write on shared data
 
 ### 6.2 Core Domain Models
 
-```swift
+```dart
 // BEV Charging Configuration
-@Model
+@HiveType(typeId: 0)
 class BEVConfig {
-    var id: UUID
-    var defaultMinimumSoC: Double = 0.40  // Daily minimum (40% default)
-    var createdAt: Date
-    var updatedAt: Date
+  @HiveField(0)
+  final String id;
+  
+  @HiveField(1)
+  double defaultMinimumSoC;  // Daily minimum (0.40 default)
+  
+  @HiveField(2)
+  final DateTime createdAt;
+  
+  @HiveField(3)
+  DateTime updatedAt;
+  
+  BEVConfig({
+    required this.id,
+    this.defaultMinimumSoC = 0.40,
+    required this.createdAt,
+    required this.updatedAt,
+  });
 }
 
 // BEV Charging Goal (optional, time-specific override)
-@Model
+@HiveType(typeId: 1)
 class BEVGoal {
-    var id: UUID
-    var targetSoC: Double              // 0.0 - 1.0 (80% or 100%)
-    var targetTime: Date               // Specific deadline (e.g., "tomorrow 8 AM")
-    var createdAt: Date
-    var isCompleted: Bool              // Auto-set when target reached
-    
-    // Computed
-    var targetSoCPercentage: Int { Int(targetSoC * 100) }
-    
-    // Validation
-    var isValid: Bool { targetSoC > 0.40 && targetTime > Date() }
+  @HiveField(0)
+  final String id;
+  
+  @HiveField(1)
+  final double targetSoC;              // 0.0 - 1.0 (80% or 100%)
+  
+  @HiveField(2)
+  final DateTime targetTime;           // Specific deadline (e.g., "tomorrow 8 AM")
+  
+  @HiveField(3)
+  final DateTime createdAt;
+  
+  @HiveField(4)
+  bool isCompleted;                    // Auto-set when target reached
+  
+  // Computed
+  int get targetSoCPercentage => (targetSoC * 100).toInt();
+  
+  // Validation
+  bool get isValid => targetSoC > 0.40 && targetTime.isAfter(DateTime.now());
+  
+  BEVGoal({
+    required this.id,
+    required this.targetSoC,
+    required this.targetTime,
+    required this.createdAt,
+    this.isCompleted = false,
+  });
 }
 
 // Charge Schedule Entry
-@Model
+@HiveType(typeId: 2)
 class ChargeSchedule {
-    var id: UUID
-    var device: DeviceType             // .bev or .battery
-    var startTime: Date
-    var endTime: Date
-    var powerKW: Double
-    var source: EnergySource           // .solar or .grid
-    var targetKWh: Double
-    var estimatedCost: Double
-    var rationale: String              // "Low price period" / "Solar surplus"
-    var status: ScheduleStatus         // .pending, .active, .completed, .failed
-    var actualKWh: Double?             // Filled after execution
-    var actualCost: Double?
+  @HiveField(0)
+  final String id;
+  
+  @HiveField(1)
+  final DeviceType device;             // DeviceType.bev or DeviceType.battery
+  
+  @HiveField(2)
+  final DateTime startTime;
+  
+  @HiveField(3)
+  final DateTime endTime;
+  
+  @HiveField(4)
+  final double powerKW;
+  
+  @HiveField(5)
+  final EnergySource source;           // EnergySource.solar or EnergySource.grid
+  
+  @HiveField(6)
+  final double targetKWh;
+  
+  @HiveField(7)
+  final double estimatedCost;
+  
+  @HiveField(8)
+  final String rationale;              // "Low price period" / "Solar surplus"
+  
+  @HiveField(9)
+  ScheduleStatus status;               // ScheduleStatus.pending, .active, etc.
+  
+  @HiveField(10)
+  double? actualKWh;                   // Filled after execution
+  
+  @HiveField(11)
+  double? actualCost;
+  
+  ChargeSchedule({
+    required this.id,
+    required this.device,
+    required this.startTime,
+    required this.endTime,
+    required this.powerKW,
+    required this.source,
+    required this.targetKWh,
+    required this.estimatedCost,
+    required this.rationale,
+    required this.status,
+    this.actualKWh,
+    this.actualCost,
+  });
 }
 
-enum DeviceType: String, Codable {
-    case bev = "BEV"
-    case battery = "Battery"
+@HiveType(typeId: 10)
+enum DeviceType {
+  @HiveField(0)
+  bev,
+  
+  @HiveField(1)
+  battery,
 }
 
-enum EnergySource: String, Codable {
-    case solar = "Solar"
-    case grid = "Grid"
+@HiveType(typeId: 11)
+enum EnergySource {
+  @HiveField(0)
+  solar,
+  
+  @HiveField(1)
+  grid,
 }
 
-enum ScheduleStatus: String, Codable {
-    case pending = "Pending"
-    case active = "Active"
-    case completed = "Completed"
-    case failed = "Failed"
-    case cancelled = "Cancelled"
+@HiveType(typeId: 12)
+enum ScheduleStatus {
+  @HiveField(0)
+  pending,
+  
+  @HiveField(1)
+  active,
+  
+  @HiveField(2)
+  completed,
+  
+  @HiveField(3)
+  failed,
+  
+  @HiveField(4)
+  cancelled,
 }
 
 // Device State Snapshot
-@Model
+@HiveType(typeId: 3)
 class DeviceSnapshot {
-    var id: UUID
-    var timestamp: Date
-    var bevSoC: Double?                // 0.0 - 1.0
-    var bevSoCKWh: Double?             // Absolute kWh (0-55)
-    var bevIsCharging: Bool
-    var bevIsConnected: Bool
-    var batterySoCKWh: Double?         // 0-12 kWh
-    var batteryPowerKW: Double?        // +/- (charging/discharging)
-    var solarPowerKW: Double?          // Current production
-    var gridPowerKW: Double?           // Current import/export
+  @HiveField(0)
+  final String id;
+  
+  @HiveField(1)
+  final DateTime timestamp;
+  
+  @HiveField(2)
+  final double? bevSoC;                // 0.0 - 1.0
+  
+  @HiveField(3)
+  final double? bevSoCKWh;             // Absolute kWh (0-55)
+  
+  @HiveField(4)
+  final bool bevIsCharging;
+  
+  @HiveField(5)
+  final bool bevIsConnected;
+  
+  @HiveField(6)
+  final double? batterySoCKWh;         // 0-12 kWh
+  
+  @HiveField(7)
+  final double? batteryPowerKW;        // +/- (charging/discharging)
+  
+  @HiveField(8)
+  final double? solarPowerKW;          // Current production
+  
+  @HiveField(9)
+  final double? gridPowerKW;           // Current import/export
+  
+  DeviceSnapshot({
+    required this.id,
+    required this.timestamp,
+    this.bevSoC,
+    this.bevSoCKWh,
+    required this.bevIsCharging,
+    required this.bevIsConnected,
+    this.batterySoCKWh,
+    this.batteryPowerKW,
+    this.solarPowerKW,
+    this.gridPowerKW,
+  });
 }
 
 // Energy Price
-@Model
+@HiveType(typeId: 4)
 class EnergyPrice {
-    var id: UUID
-    var timestamp: Date                // Start of hour
-    var spotPrice: Double              // €/kWh (before taxes)
-    var totalPrice: Double             // €/kWh (including taxes & fees)
-    var feedInRate: Double             // €/kWh compensation for export
-    var isForecast: Bool               // true if future prediction
+  @HiveField(0)
+  final String id;
+  
+  @HiveField(1)
+  final DateTime timestamp;            // Start of hour
+  
+  @HiveField(2)
+  final double spotPrice;              // €/kWh (before taxes)
+  
+  @HiveField(3)
+  final double totalPrice;             // €/kWh (including taxes & fees)
+  
+  @HiveField(4)
+  final double feedInRate;             // €/kWh compensation for export
+  
+  @HiveField(5)
+  final bool isForecast;               // true if future prediction
+  
+  EnergyPrice({
+    required this.id,
+    required this.timestamp,
+    required this.spotPrice,
+    required this.totalPrice,
+    required this.feedInRate,
+    required this.isForecast,
+  });
 }
 
 // Solar Forecast
-@Model
+@HiveType(typeId: 5)
 class SolarForecast {
-    var id: UUID
-    var timestamp: Date                // Hour start
-    var forecastKW: Double             // Predicted generation
-    var confidence: Double             // 0.0 - 1.0
-    var weatherCondition: String       // "sunny", "cloudy", etc.
+  @HiveField(0)
+  final String id;
+  
+  @HiveField(1)
+  final DateTime timestamp;            // Hour start
+  
+  @HiveField(2)
+  final double forecastKW;             // Predicted generation
+  
+  @HiveField(3)
+  final double confidence;             // 0.0 - 1.0
+  
+  @HiveField(4)
+  final String weatherCondition;       // "sunny", "cloudy", etc.
+  
+  SolarForecast({
+    required this.id,
+    required this.timestamp,
+    required this.forecastKW,
+    required this.confidence,
+    required this.weatherCondition,
+  });
 }
 
 // Optimization Run Record
-@Model
+@HiveType(typeId: 6)
 class OptimizationRun {
-    var id: UUID
-    var timestamp: Date
-    var inputBEVSoC: Double
-    var inputBatterySoC: Double
-    var inputBEVGoal: Double
-    var inputBEVDeadline: Date
-    var outputSchedules: [ChargeSchedule]
-    var estimatedTotalCost: Double
-    var estimatedSolarUsageKWh: Double
-    var estimatedGridUsageKWh: Double
-    var computationTimeMs: Double
+  @HiveField(0)
+  final String id;
+  
+  @HiveField(1)
+  final DateTime timestamp;
+  
+  @HiveField(2)
+  final double inputBEVSoC;
+  
+  @HiveField(3)
+  final double inputBatterySoC;
+  
+  @HiveField(4)
+  final double inputBEVGoal;
+  
+  @HiveField(5)
+  final DateTime inputBEVDeadline;
+  
+  @HiveField(6)
+  final List<ChargeSchedule> outputSchedules;
+  
+  @HiveField(7)
+  final double estimatedTotalCost;
+  
+  @HiveField(8)
+  final double estimatedSolarUsageKWh;
+  
+  @HiveField(9)
+  final double estimatedGridUsageKWh;
+  
+  @HiveField(10)
+  final double computationTimeMs;
+  
+  OptimizationRun({
+    required this.id,
+    required this.timestamp,
+    required this.inputBEVSoC,
+    required this.inputBatterySoC,
+    required this.inputBEVGoal,
+    required this.inputBEVDeadline,
+    required this.outputSchedules,
+    required this.estimatedTotalCost,
+    required this.estimatedSolarUsageKWh,
+    required this.estimatedGridUsageKWh,
+    required this.computationTimeMs,
+  });
 }
 ```
 
 ### 6.3 Configuration Models
 
-```swift
+```dart
 // System Configuration
-struct SystemConfig: Codable {
-    var solar: SolarConfig
-    var battery: BatteryConfig
-    var bev: BEVConfig
-    var household: HouseholdConfig
+class SystemConfig {
+  final SolarConfig solar;
+  final BatteryConfig battery;
+  final BEVConfig bev;
+  final HouseholdConfig household;
+  
+  SystemConfig({
+    required this.solar,
+    required this.battery,
+    required this.bev,
+    required this.household,
+  });
+  
+  Map<String, dynamic> toJson() => {
+    'solar': solar.toJson(),
+    'battery': battery.toJson(),
+    'bev': bev.toJson(),
+    'household': household.toJson(),
+  };
+  
+  factory SystemConfig.fromJson(Map<String, dynamic> json) => SystemConfig(
+    solar: SolarConfig.fromJson(json['solar']),
+    battery: BatteryConfig.fromJson(json['battery']),
+    bev: BEVConfig.fromJson(json['bev']),
+    household: HouseholdConfig.fromJson(json['household']),
+  );
 }
 
-struct SolarConfig: Codable {
-    var capacityKW: Double = 13.0
-    var orientation: String = "southwest"
-    var tiltDegrees: Double = 45.0
-    var location: Location
+class SolarConfig {
+  final double capacityKW;
+  final String orientation;
+  final double tiltDegrees;
+  final Location location;
+  
+  SolarConfig({
+    this.capacityKW = 13.0,
+    this.orientation = "southwest",
+    this.tiltDegrees = 45.0,
+    required this.location,
+  });
+  
+  Map<String, dynamic> toJson() => {
+    'capacityKW': capacityKW,
+    'orientation': orientation,
+    'tiltDegrees': tiltDegrees,
+    'location': location.toJson(),
+  };
+  
+  factory SolarConfig.fromJson(Map<String, dynamic> json) => SolarConfig(
+    capacityKW: json['capacityKW'],
+    orientation: json['orientation'],
+    tiltDegrees: json['tiltDegrees'],
+    location: Location.fromJson(json['location']),
+  );
 }
 
-struct Location: Codable {
-    var latitude: Double
-    var longitude: Double
+class Location {
+  final double latitude;
+  final double longitude;
+  
+  Location({
+    required this.latitude,
+    required this.longitude,
+  });
+  
+  Map<String, dynamic> toJson() => {
+    'latitude': latitude,
+    'longitude': longitude,
+  };
+  
+  factory Location.fromJson(Map<String, dynamic> json) => Location(
+    latitude: json['latitude'],
+    longitude: json['longitude'],
+  );
 }
 
-struct BatteryConfig: Codable {
-    var capacityKWh: Double = 12.0
-    var maxChargeRateKW: Double = 5.0
-    var maxDischargeRateKW: Double = 5.0
-    var minSoCKWh: Double = 1.0        // Reserve capacity
-    var maxSoCKWh: Double = 11.5       // Avoid 100% for longevity
+class BatteryConfig {
+  final double capacityKWh;
+  final double maxChargeRateKW;
+  final double maxDischargeRateKW;
+  final double minSoCKWh;        // Reserve capacity
+  final double maxSoCKWh;        // Avoid 100% for longevity
+  
+  BatteryConfig({
+    this.capacityKWh = 12.0,
+    this.maxChargeRateKW = 5.0,
+    this.maxDischargeRateKW = 5.0,
+    this.minSoCKWh = 1.0,
+    this.maxSoCKWh = 11.5,
+  });
+  
+  Map<String, dynamic> toJson() => {
+    'capacityKWh': capacityKWh,
+    'maxChargeRateKW': maxChargeRateKW,
+    'maxDischargeRateKW': maxDischargeRateKW,
+    'minSoCKWh': minSoCKWh,
+    'maxSoCKWh': maxSoCKWh,
+  };
+  
+  factory BatteryConfig.fromJson(Map<String, dynamic> json) => BatteryConfig(
+    capacityKWh: json['capacityKWh'],
+    maxChargeRateKW: json['maxChargeRateKW'],
+    maxDischargeRateKW: json['maxDischargeRateKW'],
+    minSoCKWh: json['minSoCKWh'],
+    maxSoCKWh: json['maxSoCKWh'],
+  );
 }
 
-struct BEVConfig: Codable {
-    var capacityKWh: Double = 55.0
-    var maxChargeRateKW: Double = 11.0
-    var minSoCKWh: Double = 5.0        // Emergency reserve
+class BEVConfig {
+  final double capacityKWh;
+  final double maxChargeRateKW;
+  final double minSoCKWh;        // Emergency reserve
+  
+  BEVConfig({
+    this.capacityKWh = 55.0,
+    this.maxChargeRateKW = 11.0,
+    this.minSoCKWh = 5.0,
+  });
+  
+  Map<String, dynamic> toJson() => {
+    'capacityKWh': capacityKWh,
+    'maxChargeRateKW': maxChargeRateKW,
+    'minSoCKWh': minSoCKWh,
+  };
+  
+  factory BEVConfig.fromJson(Map<String, dynamic> json) => BEVConfig(
+    capacityKWh: json['capacityKWh'],
+    maxChargeRateKW: json['maxChargeRateKW'],
+    minSoCKWh: json['minSoCKWh'],
+  );
 }
 
-struct HouseholdConfig: Codable {
-    var annualConsumptionKWh: Double = 17000.0
-    var averageHourlyConsumptionKW: Double {
-        annualConsumptionKWh / 8760.0  // ~1.94 kW
-    }
+class HouseholdConfig {
+  final double annualConsumptionKWh;
+  
+  HouseholdConfig({
+    this.annualConsumptionKWh = 17000.0,
+  });
+  
+  double get averageHourlyConsumptionKW => annualConsumptionKWh / 8760.0;  // ~1.94 kW
+  
+  Map<String, dynamic> toJson() => {
+    'annualConsumptionKWh': annualConsumptionKWh,
+  };
+  
+  factory HouseholdConfig.fromJson(Map<String, dynamic> json) => HouseholdConfig(
+    annualConsumptionKWh: json['annualConsumptionKWh'],
+  );
 }
 ```
 
@@ -790,32 +1096,48 @@ query {
 }
 ```
 
-**Swift Implementation:**
-```swift
+**Dart Implementation:**
+```dart
+import 'package:dio/dio.dart';
+
 class TibberAPI {
-    private let baseURL = "https://api.tibber.com/v1-beta/gql"
-    private let apiKey: String
-    
-    func fetchPriceForecast() async throws -> [EnergyPrice] {
-        let query = """
-        query {
-          viewer {
-            homes {
-              currentSubscription {
-                priceInfo {
-                  today { total startsAt }
-                  tomorrow { total startsAt }
-                }
-              }
+  final String baseURL = "https://api.tibber.com/v1-beta/gql";
+  final String apiKey;
+  final Dio _dio;
+  
+  TibberAPI({required this.apiKey}) : _dio = Dio() {
+    _dio.options.headers['Authorization'] = 'Bearer $apiKey';
+    _dio.options.headers['Content-Type'] = 'application/json';
+  }
+  
+  Future<List<EnergyPrice>> fetchPriceForecast() async {
+    const query = """
+    query {
+      viewer {
+        homes {
+          currentSubscription {
+            priceInfo {
+              today { total startsAt }
+              tomorrow { total startsAt }
             }
           }
         }
-        """
-        
-        let request = GraphQLRequest(query: query)
-        let response: TibberPriceResponse = try await networkManager.execute(request)
-        return response.toPrices()
+      }
     }
+    """;
+    
+    try {
+      final response = await _dio.post(
+        baseURL,
+        data: {'query': query},
+      );
+      
+      final tibberResponse = TibberPriceResponse.fromJson(response.data);
+      return tibberResponse.toPrices();
+    } catch (e) {
+      throw Exception('Failed to fetch price forecast: $e');
+    }
+  }
 }
 ```
 
@@ -854,21 +1176,30 @@ GET /v1/forecast
 }
 ```
 
-**Swift Implementation:**
-```swift
+**Dart Implementation:**
+```dart
+import 'package:dio/dio.dart';
+
 class WeatherAPI {
-    func fetchSolarForecast(lat: Double, lon: Double) async throws -> [SolarForecast] {
-        let url = URL(string: """
-            https://api.open-meteo.com/v1/forecast\
-            ?latitude=\(lat)&longitude=\(lon)\
-            &hourly=shortwave_radiation,cloudcover\
-            &forecast_days=2
-            """)!
-        
-        let (data, _) = try await URLSession.shared.data(from: url)
-        let response = try JSONDecoder().decode(WeatherResponse.self, from: data)
-        return response.toSolarForecasts(systemCapacity: 13.0)
+  final Dio _dio = Dio();
+  
+  Future<List<SolarForecast>> fetchSolarForecast({
+    required double lat,
+    required double lon,
+  }) async {
+    final url = 'https://api.open-meteo.com/v1/forecast'
+        '?latitude=$lat&longitude=$lon'
+        '&hourly=shortwave_radiation,cloudcover'
+        '&forecast_days=2';
+    
+    try {
+      final response = await _dio.get(url);
+      final weatherResponse = WeatherResponse.fromJson(response.data);
+      return weatherResponse.toSolarForecasts(systemCapacity: 13.0);
+    } catch (e) {
+      throw Exception('Failed to fetch solar forecast: $e');
     }
+  }
 }
 ```
 
@@ -1530,147 +1861,230 @@ TabView
 
 ### 9.2 Background Task Implementation
 
-```swift
-// AppDelegate.swift
-class AppDelegate: NSObject, UIApplicationDelegate {
-    func application(_ application: UIApplication,
-                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
-        
-        // Register background tasks
-        BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: "com.smarge.refresh",
-            using: nil
-        ) { task in
-            self.handleAppRefresh(task: task as! BGAppRefreshTask)
-        }
-        
-        BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: "com.smarge.optimize",
-            using: nil
-        ) { task in
-            self.handleOptimization(task: task as! BGProcessingTask)
-        }
-        
-        return true
+```dart
+// main.dart
+import 'package:flutter/material.dart';
+import 'package:workmanager/workmanager.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+@pragma('vm:entry-point')
+void callbackDispatcher() {
+  Workmanager().executeTask((task, inputData) async {
+    switch (task) {
+      case 'com.smarge.refresh':
+        await handleAppRefresh();
+        break;
+      case 'com.smarge.optimize':
+        await handleOptimization();
+        break;
+      default:
+        break;
     }
-    
-    func handleAppRefresh(task: BGAppRefreshTask) {
-        // Schedule next refresh
-        scheduleAppRefresh()
-        
-        let operation = RefreshDataOperation()
-        
-        task.expirationHandler = {
-            operation.cancel()
-        }
-        
-        operation.completionBlock = {
-            task.setTaskCompleted(success: !operation.isCancelled)
-        }
-        
-        OperationQueue().addOperation(operation)
-    }
-    
-    func handleOptimization(task: BGProcessingTask) {
-        scheduleOptimization()
-        
-        let operation = OptimizationOperation()
-        
-        task.expirationHandler = {
-            operation.cancel()
-        }
-        
-        operation.completionBlock = {
-            task.setTaskCompleted(success: !operation.isCancelled)
-        }
-        
-        OperationQueue().addOperation(operation)
-    }
-    
-    func scheduleAppRefresh() {
-        let request = BGAppRefreshTaskRequest(identifier: "com.smarge.refresh")
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
-        
-        try? BGTaskScheduler.shared.submit(request)
-    }
-    
-    func scheduleOptimization() {
-        let request = BGProcessingTaskRequest(identifier: "com.smarge.optimize")
-        request.requiresNetworkConnectivity = true
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 60 * 60)
-        
-        try? BGTaskScheduler.shared.submit(request)
-    }
+    return Future.value(true);
+  });
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize WorkManager for background tasks
+  await Workmanager().initialize(
+    callbackDispatcher,
+    isInDebugMode: false,
+  );
+  
+  // Register background tasks
+  await registerBackgroundTasks();
+  
+  runApp(const SmargeApp());
+}
+
+Future<void> registerBackgroundTasks() async {
+  // Register periodic refresh task (every 15 minutes)
+  await Workmanager().registerPeriodicTask(
+    'com.smarge.refresh',
+    'com.smarge.refresh',
+    frequency: const Duration(minutes: 15),
+    constraints: Constraints(
+      networkType: NetworkType.connected,
+    ),
+  );
+  
+  // Register optimization task (daily)
+  await Workmanager().registerPeriodicTask(
+    'com.smarge.optimize',
+    'com.smarge.optimize',
+    frequency: const Duration(hours: 1),
+    constraints: Constraints(
+      networkType: NetworkType.connected,
+    ),
+  );
+}
+
+Future<void> handleAppRefresh() async {
+  final refreshService = RefreshDataService();
+  await refreshService.execute();
+}
+
+Future<void> handleOptimization() async {
+  final optimizationService = OptimizationService();
+  await optimizationService.execute();
 }
 ```
 
 ### 9.3 Notification Scheduling
 
-```swift
+```dart
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/timezone.dart' as tz;
+
 class NotificationManager {
-    static let shared = NotificationManager()
+  static final NotificationManager _instance = NotificationManager._internal();
+  factory NotificationManager() => _instance;
+  NotificationManager._internal();
+  
+  final FlutterLocalNotificationsPlugin _notifications = 
+      FlutterLocalNotificationsPlugin();
+  
+  Future<void> initialize() async {
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const iosSettings = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
     
-    func scheduleMorningOptimizationReminder() {
-        let content = UNMutableNotificationContent()
-        content.title = "Good morning!"
-        content.body = "Optimize solar usage for today"
-        content.sound = .default
-        content.categoryIdentifier = "MORNING_OPTIMIZATION"
-        content.userInfo = ["action": "optimize_solar"]
-        
-        var dateComponents = DateComponents()
-        dateComponents.hour = 6
-        dateComponents.minute = 30
-        
-        let trigger = UNCalendarNotificationTrigger(
-            dateMatching: dateComponents,
-            repeats: true
-        )
-        
-        let request = UNNotificationRequest(
-            identifier: "morning-optimization",
-            content: content,
-            trigger: trigger
-        )
-        
-        UNUserNotificationCenter.current().add(request)
+    const settings = InitializationSettings(
+      android: androidSettings,
+      iOS: iosSettings,
+    );
+    
+    await _notifications.initialize(settings);
+  }
+  
+  Future<void> scheduleMorningOptimizationReminder() async {
+    const androidDetails = AndroidNotificationDetails(
+      'optimization',
+      'Optimization Reminders',
+      channelDescription: 'Daily optimization reminders',
+      importance: Importance.high,
+      priority: Priority.high,
+    );
+    
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+    
+    const details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+    
+    // Schedule for 6:30 AM daily
+    await _notifications.zonedSchedule(
+      0,  // Notification ID
+      'Good morning!',
+      'Optimize solar usage for today',
+      _nextInstanceOf(hour: 6, minute: 30),
+      details,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation: 
+          UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents: DateTimeComponents.time,
+    );
+  }
+  
+  Future<void> scheduleAfternoonOptimizationReminder() async {
+    const androidDetails = AndroidNotificationDetails(
+      'optimization',
+      'Optimization Reminders',
+      channelDescription: 'Daily optimization reminders',
+      importance: Importance.high,
+      priority: Priority.high,
+    );
+    
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+    
+    const details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+    
+    // Schedule for 1:30 PM daily
+    await _notifications.zonedSchedule(
+      1,  // Notification ID
+      'Prices updated!',
+      'Tomorrow\\'s electricity prices are available. Re-optimize?',
+      _nextInstanceOf(hour: 13, minute: 30),
+      details,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation: 
+          UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents: DateTimeComponents.time,
+    );
+  }
+  
+  Future<void> scheduleChargeSessionReminder(ChargeSchedule session) async {
+    final reminderTime = session.startTime.subtract(const Duration(minutes: 15));
+    
+    if (reminderTime.isBefore(DateTime.now())) return;
+    
+    const androidDetails = AndroidNotificationDetails(
+      'charging',
+      'Charging Sessions',
+      channelDescription: 'Upcoming charging session notifications',
+      importance: Importance.high,
+      priority: Priority.high,
+    );
+    
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+    
+    const details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+    
+    await _notifications.zonedSchedule(
+      session.id.hashCode,  // Use session ID as notification ID
+      '${session.device.name} charging soon',
+      'Charging starts in 15 minutes',
+      tz.TZDateTime.from(reminderTime, tz.local),
+      details,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation: 
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
+  
+  tz.TZDateTime _nextInstanceOf({required int hour, required int minute}) {
+    final now = tz.TZDateTime.now(tz.local);
+    var scheduledDate = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      hour,
+      minute,
+    );
+    
+    if (scheduledDate.isBefore(now)) {
+      scheduledDate = scheduledDate.add(const Duration(days: 1));
     }
     
-    func scheduleAfternoonOptimizationReminder() {
-        let content = UNMutableNotificationContent()
-        content.title = "Prices updated!"
-        content.body = "Tomorrow's electricity prices are available. Re-optimize?"
-        content.sound = .default
-        content.categoryIdentifier = "AFTERNOON_OPTIMIZATION"
-        content.userInfo = ["action": "optimize_prices"]
-        
-        var dateComponents = DateComponents()
-        dateComponents.hour = 13
-        dateComponents.minute = 30
-        
-        let trigger = UNCalendarNotificationTrigger(
-            dateMatching: dateComponents,
-            repeats: true
-        )
-        
-        let request = UNNotificationRequest(
-            identifier: "afternoon-optimization",
-            content: content,
-            trigger: trigger
-        )
-        
-        UNUserNotificationCenter.current().add(request)
-    }
-    
-    func scheduleChargeSessionReminder(session: ChargeSchedule) {
-        let reminderTime = session.startTime.addingTimeInterval(-15 * 60)
-        
-        guard reminderTime > Date() else { return }
-        
-        let content = UNMutableNotificationContent()
-        content.title = "\(session.device.rawValue) charging soon"
-        content.body = "Charging starts in 15 minutes"
-        content.sound = .default
+    return scheduledDate;
+  }
+}
+```
         content.categoryIdentifier = "CHARGE_STARTING"
         content.userInfo = ["scheduleId": session.id.uuidString]
         

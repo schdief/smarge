@@ -48,24 +48,24 @@ Enable households with solar power systems, home batteries, and electric vehicle
 
 ### 2.2 Architecture Principles
 
-**iOS-First, Standalone Architecture**
-- Native iOS app as primary and sole interface
+**Mobile-First, Cross-Platform Architecture**
+- Flutter app for iOS (primary) with Android potential
 - No mandatory external servers or cloud dependencies
 - All optimization logic runs locally on device
 - Optional companion device (Raspberry Pi) for advanced scenarios only
 
 **Smart Background Execution**
-- Leverage iOS background tasks for periodic updates
+- Leverage platform-specific background tasks (iOS: BGTaskScheduler, Android: WorkManager)
 - Schedule device commands through direct API calls
 - Graceful degradation when background tasks are limited
 - Notification reminders ensure user can trigger optimization
 
 **Privacy & Data Ownership**
-- All data stored locally on device (SwiftData for MVP, CloudKit sync in Phase 2)
+- All data stored locally on device (Hive/Isar for MVP, platform sync in Phase 2)
 - No telemetry or analytics without explicit user consent
 - User owns and controls all historical data
-- Shared household data via CloudKit (Phase 2: multi-user support)
-- Secure credential storage for API tokens (Keychain)
+- Shared household data via platform-specific sync (iOS: CloudKit, Android: Firebase)
+- Secure credential storage for API tokens (Flutter Secure Storage)
 
 **Resilience & Offline Capability**
 - App functions with cached data when network unavailable
@@ -149,11 +149,11 @@ Enable households with solar power systems, home batteries, and electric vehicle
 
 ### 3.2 Technical Constraints
 
-**iOS Platform Limitations**
-- Background tasks limited to ~30 minutes of execution
+**Mobile Platform Limitations**
+- Background tasks limited by platform (iOS: ~30 min, Android: WorkManager constraints)
 - Background refresh occurs at system's discretion (not guaranteed timing)
 - Network requests must complete within background task window
-- Push notifications require user permission
+- Push notifications require user permission on both platforms
 
 **Device API Limitations**
 - Q.HOME devices: API rate limits, authentication requirements
@@ -205,7 +205,7 @@ The following are explicitly NOT included in the initial release:
 - **Smart home integration**: No control of other household devices
 - **Energy community features**: No peer-to-peer energy sharing
 - **Advanced ML models**: Start with simpler statistical forecasting
-- **Export to other platforms**: iOS only (no Android, web)
+- **Web platform**: Mobile only (iOS primary, Android future)
 - **Automatic tariff switching**: User must manually change provider settings
 
 **Note**: Multi-user support via CloudKit is planned for Phase 2 (see Development Phases)
@@ -214,11 +214,11 @@ The following are explicitly NOT included in the initial release:
 
 ## 5. Key Decisions & Rationale
 
-### Decision 1: iOS-Only, No Required Backend
-**Rationale**: Eliminates hosting costs, reduces complexity, ensures user privacy, enables offline functionality. User is willing to open app daily when notified.
+### Decision 1: Flutter Mobile-First, No Required Backend
+**Rationale**: Eliminates hosting costs, reduces complexity, ensures user privacy, enables offline functionality. Flutter enables future Android support while maintaining iOS quality. User is willing to open app daily when notified.
 
 ### Decision 2: Notification-Driven Daily Interaction
-**Rationale**: Works within iOS background task limitations, ensures optimization runs regularly, gives user control while minimizing manual effort.
+**Rationale**: Works within mobile platform background task limitations, ensures optimization runs regularly, gives user control while minimizing manual effort.
 
 ### Decision 3: Solar Priority Over Cost Optimization
 **Rationale**: Self-consumed solar has ~9 cent opportunity cost (feed-in rate), often better than grid prices. Maximizes energy independence and sustainability goals.
@@ -230,32 +230,33 @@ The following are explicitly NOT included in the initial release:
 **Rationale**: Rule-based greedy algorithm can achieve 80% of optimal results with 20% of complexity. Proves value before investing in sophisticated optimization.
 
 ### Decision 6: Multi-User in Phase 2 (Not MVP)
-**Rationale**: Start with single-device MVP to prove core value quickly. Add CloudKit-based household sharing in Phase 2 once optimization is validated. Design data models from start to be CloudKit-compatible (use standard Swift types, avoid complex relationships). Apple Family Sharing provides natural household grouping.
+**Rationale**: Start with single-device MVP to prove core value quickly. Add platform-specific household sharing in Phase 2 (iOS: CloudKit, Android: Firebase) once optimization is validated. Design data models to be sync-compatible from the start (use standard Dart types, flat structures). Platform family sharing features provide natural household grouping.
 
 ---
 
 ## 6. Technology Stack
 
 ### Development Environment
-- **Hardware**: M1 MacBook Air (Apple Silicon)
-- **OS**: macOS Sequoia 15.x (or latest)
-- **IDE**: Xcode 16+
+- **Hardware**: M1 MacBook Air (Apple Silicon) or compatible
+- **OS**: macOS Sequoia 15.x (or latest) / Windows / Linux
+- **IDE**: VS Code with Flutter extension (primary), Android Studio (optional)
 - **Version Control**: Git + GitHub
 - **Specification**: GitHub Spec Kit
 
 ### Primary Technologies
-- **Platform**: iOS 18+ (minimum iOS 18.0, targeting iOS 26.1)
-- **Language**: Swift 5.10+
-- **UI Framework**: SwiftUI 5.0+
-- **Async**: Swift Concurrency (async/await, actors)
-- **Reactive**: Combine framework
-- **Storage**: SwiftData (iOS 17+) for local persistence
-- **Sync**: CloudKit (Phase 2) for multi-user household sharing
-- **Networking**: URLSession with async/await
-- **Background**: BGTaskScheduler (BGAppRefreshTask, BGProcessingTask)
-- **Notifications**: UserNotifications framework
-- **Charts**: Swift Charts (iOS 16+)
-- **Security**: Keychain Services for credential storage
+- **Platform**: iOS 13+ (primary), Android 6.0+ (future)
+- **Framework**: Flutter 3.24+
+- **Language**: Dart 3.5+
+- **UI Framework**: Flutter Material/Cupertino widgets
+- **State Management**: Riverpod or Provider
+- **Async**: Dart async/await, Futures, Streams
+- **Storage**: Hive or Isar for local persistence
+- **Sync**: Platform-specific (iOS: CloudKit via platform channels, Android: Firebase)
+- **Networking**: http package or dio for API calls
+- **Background**: flutter_background_fetch, workmanager
+- **Notifications**: flutter_local_notifications
+- **Charts**: fl_chart or syncfusion_flutter_charts
+- **Security**: flutter_secure_storage for credential storage
 
 ### External APIs
 - **Tibber API**: Dynamic electricity pricing and consumption data
@@ -274,9 +275,9 @@ The following are explicitly NOT included in the initial release:
   - Charging rate control
 
 ### Development Tools
-- **Testing**: XCTest (unit), XCUITest (UI automation)
-- **Debugging**: Instruments, OSLog for structured logging
-- **Package Manager**: Swift Package Manager (SPM)
+- **Testing**: flutter_test (unit/widget), integration_test (E2E)
+- **Debugging**: Flutter DevTools, structured logging
+- **Package Manager**: pub (Dart package manager)
 - **CI/CD**: GitHub Actions (optional for automated testing)
 - **Analytics**: None initially (privacy-first approach)
 
